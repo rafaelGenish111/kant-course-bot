@@ -75,16 +75,42 @@ class VectorStoreManager {
         const validDocs = splitDocs.filter(doc => doc.pageContent.trim().length > 10);
         console.log(`Filtered to ${validDocs.length} valid chunks (from ${splitDocs.length})`);
 
-        // Embed documents in batches
-        const batchSize = 50;
+        // Test embedding API before processing all documents
+        console.log("Testing embedding API...");
+        const testVector = await embeddings.embedQuery("test");
+        if (!testVector || testVector.length === 0) {
+            throw new Error("Embedding API returned empty result. Check your API key and quota.");
+        }
+        const numDimensions = testVector.length;
+        console.log(`Embedding API working. Dimensions: ${numDimensions}`);
+
+        // Embed documents in batches with delay to avoid rate limits
+        const batchSize = 20;
         const texts = validDocs.map(doc => doc.pageContent);
+        const totalBatches = Math.ceil(texts.length / batchSize);
         console.log(`Embedding ${texts.length} chunks in batches of ${batchSize}...`);
         const allVectors = [];
         for (let i = 0; i < texts.length; i += batchSize) {
             const batch = texts.slice(i, i + batchSize);
-            const vectors = await embeddings.embedDocuments(batch);
+            const batchNum = Math.floor(i / batchSize) + 1;
+
+            // Retry logic for each batch
+            let vectors;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                vectors = await embeddings.embedDocuments(batch);
+                const validCount = vectors.filter(v => v && v.length > 0).length;
+                if (validCount === batch.length) break;
+                console.log(`  Batch ${batchNum}: ${validCount}/${batch.length} valid, retry ${attempt}/3 in 5s...`);
+                await new Promise(r => setTimeout(r, 5000));
+            }
+
             allVectors.push(...vectors);
-            console.log(`  Embedded batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)}`);
+            console.log(`  Embedded batch ${batchNum}/${totalBatches}`);
+
+            // Small delay between batches to avoid rate limits
+            if (i + batchSize < texts.length) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
 
         // Filter out any docs whose vectors came back empty
@@ -94,13 +120,15 @@ class VectorStoreManager {
             if (allVectors[i] && allVectors[i].length > 0) {
                 filteredVectors.push(allVectors[i]);
                 filteredDocs.push(validDocs[i]);
-            } else {
-                console.log(`  Skipping chunk ${i} (empty embedding)`);
             }
         }
 
-        const numDimensions = filteredVectors[0].length;
-        console.log(`Embedding dimensions: ${numDimensions}, valid vectors: ${filteredVectors.length}`);
+        if (filteredVectors.length === 0) {
+            throw new Error("All embeddings returned empty. Your API quota may be exceeded. Please wait or enable billing.");
+        }
+
+        const skipped = allVectors.length - filteredVectors.length;
+        console.log(`Valid vectors: ${filteredVectors.length}, skipped: ${skipped}`);
 
         this.vectorStore = new HNSWLib(embeddings, { space: "cosine", numDimensions });
         await this.vectorStore.addVectors(filteredVectors, filteredDocs);
