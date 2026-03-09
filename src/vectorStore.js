@@ -1,0 +1,114 @@
+require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const { HNSWLib } = require("@langchain/community/vectorstores/hnswlib");
+const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
+const { PDFLoader } = require("@langchain/community/document_loaders/fs/pdf");
+const { RecursiveCharacterTextSplitter } = require("@langchain/textsplitters");
+
+const BOOKS_DIR = path.join(__dirname, "../books");
+const VECTOR_STORE_PATH = path.join(__dirname, "../data/vector_store");
+
+// Ensure data directory exists
+if (!fs.existsSync(path.join(__dirname, "../data"))) {
+    fs.mkdirSync(path.join(__dirname, "../data"));
+}
+
+const embeddings = new GoogleGenerativeAIEmbeddings({
+    apiKey: process.env.GOOGLE_API_KEY,
+    model: "gemini-embedding-001",
+});
+
+class VectorStoreManager {
+    constructor() {
+        this.vectorStore = null;
+    }
+
+    async getVectorStore() {
+        if (this.vectorStore) return this.vectorStore;
+
+        if (fs.existsSync(VECTOR_STORE_PATH)) {
+            console.log("Loading vector store from disk...");
+            try {
+                this.vectorStore = await HNSWLib.load(VECTOR_STORE_PATH, embeddings);
+                console.log("Vector store loaded successfully.");
+            } catch (error) {
+                console.error("Error loading vector store, rebuilding...", error);
+                await this.rebuildIndex();
+            }
+        } else {
+            console.log("Vector store not found, building new index...");
+            await this.rebuildIndex();
+        }
+        return this.vectorStore;
+    }
+
+    async rebuildIndex() {
+        console.log("Scanning books directory...");
+        const files = fs.readdirSync(BOOKS_DIR).filter(file => file.toLowerCase().endsWith('.pdf'));
+
+        const allDocs = [];
+        for (const file of files) {
+            const filePath = path.join(BOOKS_DIR, file);
+            console.log(`Loading: ${file}...`);
+            const loader = new PDFLoader(filePath);
+            const docs = await loader.load();
+
+            // Add metadata
+            docs.forEach(doc => {
+                doc.metadata.source = file;
+            });
+
+            allDocs.push(...docs);
+        }
+        console.log(`Loaded ${allDocs.length} pages total.`);
+
+        const splitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 1000,
+            chunkOverlap: 200,
+        });
+        const splitDocs = await splitter.splitDocuments(allDocs);
+
+        console.log("Creating vector store...");
+
+        // Filter out empty/whitespace-only chunks
+        const validDocs = splitDocs.filter(doc => doc.pageContent.trim().length > 10);
+        console.log(`Filtered to ${validDocs.length} valid chunks (from ${splitDocs.length})`);
+
+        // Embed documents in batches
+        const batchSize = 50;
+        const texts = validDocs.map(doc => doc.pageContent);
+        console.log(`Embedding ${texts.length} chunks in batches of ${batchSize}...`);
+        const allVectors = [];
+        for (let i = 0; i < texts.length; i += batchSize) {
+            const batch = texts.slice(i, i + batchSize);
+            const vectors = await embeddings.embedDocuments(batch);
+            allVectors.push(...vectors);
+            console.log(`  Embedded batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)}`);
+        }
+
+        // Filter out any docs whose vectors came back empty
+        const filteredVectors = [];
+        const filteredDocs = [];
+        for (let i = 0; i < allVectors.length; i++) {
+            if (allVectors[i] && allVectors[i].length > 0) {
+                filteredVectors.push(allVectors[i]);
+                filteredDocs.push(validDocs[i]);
+            } else {
+                console.log(`  Skipping chunk ${i} (empty embedding)`);
+            }
+        }
+
+        const numDimensions = filteredVectors[0].length;
+        console.log(`Embedding dimensions: ${numDimensions}, valid vectors: ${filteredVectors.length}`);
+
+        this.vectorStore = new HNSWLib(embeddings, { space: "cosine", numDimensions });
+        await this.vectorStore.addVectors(filteredVectors, filteredDocs);
+
+        console.log("Saving vector store to disk...");
+        await this.vectorStore.save(VECTOR_STORE_PATH);
+        console.log("Vector store saved.");
+    }
+}
+
+module.exports = new VectorStoreManager();

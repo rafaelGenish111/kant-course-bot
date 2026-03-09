@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600&display=swap');
+
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@theme {
+  --color-kant-paper: #f9f5e6;
+  --color-kant-ink: #2c2c2c;
+  --color-kant-accent: #8b4513;
+  --color-kant-muted: #8b8b8b;
+  --color-kant-bg: #e8e4d9;
+
+  --font-family-serif: "Libre Baskerville", serif;
+  --font-family-sans: "Inter", sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-kant-bg);
+    color: var(--color-kant-ink);
+    font-family: var(--font-family-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-family-serif);
+    font-weight: 700;
+    color: var(--color-kant-ink);
+  }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

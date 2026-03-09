@@ -1,0 +1,5 @@
+node_modules
+.env
+data/vector_store
+.DS_Store
+*.log
