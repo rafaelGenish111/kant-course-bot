@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, BookOpen, User, Bot, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const API_URL = import.meta.env.VITE_API_URL || '${API_URL}';
+
 function App() {
   const [messages, setMessages] = useState([
     {
@@ -24,7 +26,7 @@ function App() {
 
   useEffect(() => {
     // Check if server is running on mount
-    fetch('http://localhost:3001/api/status')
+    fetch(`${API_URL}/api/status`)
       .then(res => res.json())
       .then(data => console.log('Server status:', data))
       .catch(err => console.error('Server not reachable:', err));
@@ -46,7 +48,7 @@ function App() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -195,7 +197,7 @@ function App() {
             </button>
           </form>
           <div className="text-center mt-2 text-[10px] text-kant-muted uppercase tracking-widest opacity-60">
-            מופעל על ידי RAG & Claude Sonnet
+            מופעל על ידי RAG & Gemini
           </div>
         </div>
       </footer>
