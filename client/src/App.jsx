@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, BookOpen, User, Bot, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = import.meta.env.VITE_API_URL || '${API_URL}';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function App() {
   const [messages, setMessages] = useState([
